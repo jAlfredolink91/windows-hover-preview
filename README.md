@@ -25,13 +25,18 @@ y aparece una vista previa flotante — sin abrir el archivo ni cargar programas
 - 📝 **Word** — .doc, .docx, .rtf
 - 📊 **Excel** — .xls, .xlsx
 - 📽️ **PowerPoint** — .ppt, .pptx
-- 📃 **Texto y código** — .txt, .csv, .log, .xml, .json, .md, .cs, .js, .html, etc.
+- 📂 **OpenDocument** — .odt, .ods, .odp (OpenOffice/LibreOffice, vía MS Office)
+- 📃 **Texto y código** — .txt, .csv, .log, .xml, .json, .cs, .js, .html, etc.
+- 📝 **Markdown** — .md con formato (títulos, negrita, listas, código)
 - 🗜️ **ZIP** — lista el contenido sin descomprimir
 - 📧 **Correos** — .eml (y .msg si tienes Outlook)
+- 🎞️ **Videos** — .mp4, .mov, .avi, .wmv… (muestra el primer cuadro)
 - 🔍 **Zoom** — Ctrl + rueda, o los botones  −  / ＋  (recuerda el nivel que elijas)
 - 🖱️ **Scroll** — rueda del mouse (Shift + rueda = horizontal)
 - 🔘 **Botón "Abrir"** — abre el archivo con un clic si es el que buscabas
+- 📋 **Botón "Copiar"** — copia el texto (en modo texto/código/correo)
 - 📌 **Fijar** — deja la vista previa abierta para leerla con calma (y puedes moverla)
+- ↔️ **Ventana redimensionable** — estira los bordes; recuerda el tamaño
 - 🌙 **Tema claro/oscuro** — sigue automáticamente al de Windows
 - ⏱️ **Tiempo de aparición** ajustable desde el menú de la bandeja
 - 🗂️ Funciona también en los **cuadros de diálogo "Abrir / Guardar"** de otros

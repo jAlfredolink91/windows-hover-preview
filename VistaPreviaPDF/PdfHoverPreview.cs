@@ -40,14 +40,65 @@ class PdfHoverPreview
     const int WH_MOUSE_LL = 14;
     const int WM_MOUSEWHEEL = 0x020A;
 
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+    static readonly IntPtr DPI_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+    static void EnableDpiAwareness()
+    {
+        // Evita que Windows "estire" (y haga borrosa) la ventana en pantallas escaladas.
+        try { if (SetProcessDpiAwarenessContext(DPI_PER_MONITOR_AWARE_V2)) return; } catch { }
+        try { SetProcessDPIAware(); } catch { }
+    }
+
+    // ---------- Miniatura del shell (para videos: primer cuadro) ----------
+    [StructLayout(LayoutKind.Sequential)] struct SHSIZE { public int cx; public int cy; }
+    [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellItemImageFactory { void GetImage(SHSIZE size, int flags, out IntPtr phbm); }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    static extern int SHCreateItemFromParsingName(string pszPath, IntPtr pbc, ref Guid riid, out IShellItemImageFactory ppv);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
+
+    static Bitmap ShellThumbnail(string path, int size)
+    {
+        IShellItemImageFactory f = null;
+        try
+        {
+            Guid iid = new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");
+            int hr = SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out f);
+            if (hr != 0 || f == null) throw new Exception("SHCreateItemFromParsingName hr=" + hr);
+            SHSIZE sz; sz.cx = size; sz.cy = size;
+            IntPtr hbm;
+            f.GetImage(sz, 0x00, out hbm); // SIIGBF_RESIZETOFIT (miniatura; si no hay, icono)
+            if (hbm == IntPtr.Zero) throw new Exception("sin miniatura");
+            try
+            {
+                using (Bitmap tmp = Image.FromHbitmap(hbm))
+                {
+                    Bitmap safe = new Bitmap(tmp.Width, tmp.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    using (Graphics g = Graphics.FromImage(safe))
+                    {
+                        g.Clear(Color.Black);
+                        g.DrawImage(tmp, new Rectangle(0, 0, tmp.Width, tmp.Height));
+                    }
+                    return safe;
+                }
+            }
+            finally { DeleteObject(hbm); }
+        }
+        finally { if (f != null) Marshal.FinalReleaseComObject(f); }
+    }
+
     // ---------- Tipos de archivo ----------
-    const int KIND_NONE = 0, KIND_PDF = 1, KIND_IMAGE = 2, KIND_OFFICE = 3, KIND_TEXT = 4, KIND_ZIP = 5, KIND_EMAIL = 6;
+    const int KIND_NONE = 0, KIND_PDF = 1, KIND_IMAGE = 2, KIND_OFFICE = 3, KIND_TEXT = 4, KIND_ZIP = 5, KIND_EMAIL = 6, KIND_VIDEO = 7, KIND_MARKDOWN = 8;
     static readonly string[] ImageExts = { ".jpg", ".jpeg", ".jfif", ".png", ".gif", ".bmp", ".tif", ".tiff", ".ico", ".webp", ".heic", ".heif" };
-    static readonly string[] OfficeExts = { ".doc", ".docx", ".docm", ".rtf", ".xls", ".xlsx", ".xlsm", ".xlsb", ".ppt", ".pptx", ".pptm" };
-    static readonly string[] TextExts = { ".txt", ".csv", ".tsv", ".log", ".xml", ".json", ".ini", ".cfg", ".conf", ".config", ".md", ".yml", ".yaml",
+    static readonly string[] OfficeExts = { ".doc", ".docx", ".docm", ".rtf", ".xls", ".xlsx", ".xlsm", ".xlsb", ".ppt", ".pptx", ".pptm",
+                                            ".odt", ".ods", ".odp" }; // OpenDocument (OpenOffice/LibreOffice), via MS Office
+    static readonly string[] TextExts = { ".txt", ".csv", ".tsv", ".log", ".xml", ".json", ".ini", ".cfg", ".conf", ".config", ".yml", ".yaml",
                                           ".cs", ".js", ".ts", ".html", ".htm", ".css", ".bat", ".cmd", ".ps1", ".py", ".sql", ".java", ".c", ".cpp", ".h", ".php", ".vb", ".reg" };
+    static readonly string[] MdExts = { ".md", ".markdown" };
     static readonly string[] ZipExts = { ".zip" };
     static readonly string[] EmailExts = { ".eml", ".msg" };
+    static readonly string[] VideoExts = { ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".mpg", ".mpeg", ".webm", ".flv", ".3gp" };
     static readonly string[] AllExts;
     static PdfHoverPreview()
     {
@@ -56,8 +107,10 @@ class PdfHoverPreview
         all.AddRange(ImageExts);
         all.AddRange(OfficeExts);
         all.AddRange(TextExts);
+        all.AddRange(MdExts);
         all.AddRange(ZipExts);
         all.AddRange(EmailExts);
+        all.AddRange(VideoExts);
         AllExts = all.ToArray();
     }
     static int KindOf(string path)
@@ -67,8 +120,10 @@ class PdfHoverPreview
         foreach (string x in ImageExts) if (x == e) return KIND_IMAGE;
         foreach (string x in OfficeExts) if (x == e) return KIND_OFFICE;
         foreach (string x in TextExts) if (x == e) return KIND_TEXT;
+        foreach (string x in MdExts) if (x == e) return KIND_MARKDOWN;
         foreach (string x in ZipExts) if (x == e) return KIND_ZIP;
         foreach (string x in EmailExts) if (x == e) return KIND_EMAIL;
+        foreach (string x in VideoExts) if (x == e) return KIND_VIDEO;
         return KIND_NONE;
     }
 
@@ -133,9 +188,9 @@ class PdfHoverPreview
         if (File.Exists(outPdf) && new FileInfo(outPdf).Length > 0) return outPdf;
 
         string ext = Path.GetExtension(path).ToLowerInvariant();
-        if (ext.StartsWith(".doc") || ext == ".rtf") WordExport(path, outPdf);
-        else if (ext.StartsWith(".xls")) ExcelExport(path, outPdf);
-        else if (ext.StartsWith(".ppt")) PowerPointExport(path, outPdf);
+        if (ext.StartsWith(".doc") || ext == ".rtf" || ext == ".odt") WordExport(path, outPdf);
+        else if (ext.StartsWith(".xls") || ext == ".ods") ExcelExport(path, outPdf);
+        else if (ext.StartsWith(".ppt") || ext == ".odp") PowerPointExport(path, outPdf);
         else throw new Exception("formato no soportado: " + ext);
 
         if (!File.Exists(outPdf)) throw new Exception("no se genero el PDF");
@@ -297,6 +352,31 @@ class PdfHoverPreview
             File.WriteAllText(ConfigFile(), sb.ToString());
         }
         catch { }
+    }
+
+    // ---------- Registro de errores (%LOCALAPPDATA%\VistaPreviaPDF\log.txt) ----------
+    static readonly object _logLock = new object();
+    static readonly object OfficeLock = new object(); // una conversion de Office a la vez
+    static void Log(string msg)
+    {
+        try
+        {
+            string f = Path.Combine(Path.GetDirectoryName(ConfigFile()), "log.txt");
+            lock (_logLock)
+            {
+                if (File.Exists(f) && new FileInfo(f).Length > 200 * 1024)
+                {
+                    try { string all = File.ReadAllText(f); File.WriteAllText(f, all.Substring(all.Length / 2)); }
+                    catch { }
+                }
+                File.AppendAllText(f, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + Environment.NewLine);
+            }
+        }
+        catch { }
+    }
+    static void Log(string ctx, Exception ex)
+    {
+        Log(ctx + ": " + (ex != null ? ex.GetType().Name + " - " + ex.Message : "null"));
     }
 
     static bool IsDarkTheme()
@@ -627,8 +707,10 @@ class PdfHoverPreview
         Label loading;
         Panel zoomBar;
         Label zoomLbl;
-        TextBox textBox;          // modo texto (txt, csv, zip, correos)
-        Panel actionBar;          // botones Abrir / Fijar
+        RichTextBox textBox;      // modo texto (txt, csv, zip, correos) y markdown con formato
+        Panel actionBar;          // botones Abrir / Copiar / Fijar
+        Button openBtn;
+        Button copyBtn;
         Button pinBtn;
         List<double> ratios = new List<double>();
         float zoom = 1f;
@@ -637,11 +719,12 @@ class PdfHoverPreview
         public const int FormWidth = 560;
         int BaseContentW;
 
-        const int MODE_PAGES = 0, MODE_TEXT = 1;
+        const int MODE_PAGES = 0, MODE_TEXT = 1, MODE_MD = 2;
         int mode = MODE_PAGES;
         public bool Pinned;
         public string CurrentFile;   // archivo original (para el boton Abrir)
         bool dragging; Point dragStart;
+        bool settingBounds;          // true mientras NOSOTROS cambiamos el tamano (no es del usuario)
 
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
         const int EM_LINESCROLL = 0x00B6;
@@ -694,11 +777,11 @@ class PdfHoverPreview
             zoomBar.BringToFront();
 
             // Cuadro de texto (para .txt, .csv, .zip, correos)
-            textBox = new TextBox();
-            textBox.Multiline = true;
+            textBox = new RichTextBox();
             textBox.ReadOnly = true;
-            textBox.ScrollBars = ScrollBars.Both;
+            textBox.ScrollBars = RichTextBoxScrollBars.Both;
             textBox.WordWrap = false;
+            textBox.DetectUrls = false;
             textBox.Dock = DockStyle.Fill;
             textBox.BackColor = Color.White;
             textBox.ForeColor = Color.FromArgb(30, 30, 30);
@@ -713,7 +796,7 @@ class PdfHoverPreview
             actionBar.BackColor = Color.FromArgb(245, 245, 245);
             actionBar.BorderStyle = BorderStyle.FixedSingle;
             actionBar.Visible = false;
-            Button openBtn = new Button();
+            openBtn = new Button();
             openBtn.Text = "Abrir";
             openBtn.SetBounds(0, 0, 72, 26);
             openBtn.FlatStyle = FlatStyle.Flat;
@@ -722,6 +805,24 @@ class PdfHoverPreview
             openBtn.Font = new Font("Segoe UI", 8.5f);
             openBtn.TabStop = false;
             openBtn.Click += delegate { OpenCurrentFile(); };
+            copyBtn = new Button();
+            copyBtn.Text = "Copiar";
+            copyBtn.SetBounds(74, 0, 72, 26);
+            copyBtn.FlatStyle = FlatStyle.Flat;
+            copyBtn.FlatAppearance.BorderSize = 0;
+            copyBtn.BackColor = Color.White;
+            copyBtn.Font = new Font("Segoe UI", 8.5f);
+            copyBtn.TabStop = false;
+            copyBtn.Visible = false;
+            copyBtn.Click += delegate
+            {
+                try
+                {
+                    string t = (textBox.SelectionLength > 0) ? textBox.SelectedText : textBox.Text;
+                    if (!string.IsNullOrEmpty(t)) Clipboard.SetText(t);
+                }
+                catch { }
+            };
             pinBtn = new Button();
             pinBtn.Text = "Fijar";
             pinBtn.SetBounds(74, 0, 74, 26);
@@ -732,6 +833,7 @@ class PdfHoverPreview
             pinBtn.TabStop = false;
             pinBtn.Click += delegate { TogglePin(); };
             actionBar.Controls.Add(openBtn);
+            actionBar.Controls.Add(copyBtn);
             actionBar.Controls.Add(pinBtn);
             // arrastrar la ventana tomando la barra de acciones (util al fijar)
             actionBar.MouseDown += delegate(object s, MouseEventArgs e) { dragging = true; dragStart = e.Location; };
@@ -769,12 +871,25 @@ class PdfHoverPreview
         void ShowActionBar()
         {
             if (pinBtn != null) pinBtn.Text = Pinned ? "Fijado" : "Fijar";
-            // En modo texto el contenido va a la izquierda: barra a la derecha.
-            // En modo paginas la barra de zoom esta a la derecha: barra a la izquierda.
-            if (mode == MODE_TEXT)
+            // Modo texto: contenido a la izquierda -> barra a la derecha, con "Copiar".
+            // Modo paginas: la barra de zoom esta a la derecha -> barra a la izquierda.
+            if (mode == MODE_TEXT || mode == MODE_MD)
+            {
+                copyBtn.Visible = true;
+                openBtn.SetBounds(0, 0, 70, 26);
+                copyBtn.SetBounds(72, 0, 70, 26);
+                pinBtn.SetBounds(144, 0, 72, 26);
+                actionBar.Width = 218;
                 actionBar.Location = new Point(ClientSize.Width - actionBar.Width - 3 - SystemInformation.VerticalScrollBarWidth, 3);
+            }
             else
+            {
+                copyBtn.Visible = false;
+                openBtn.SetBounds(0, 0, 72, 26);
+                pinBtn.SetBounds(74, 0, 74, 26);
+                actionBar.Width = 150;
                 actionBar.Location = new Point(3, 3);
+            }
             actionBar.Visible = true;
             actionBar.BringToFront();
         }
@@ -862,6 +977,92 @@ class PdfHoverPreview
             return 1f;
         }
 
+        // ----- Tamano recordado de la ventana (redimensionable por el usuario) -----
+        int SavedW() { int v; if (int.TryParse(CfgGet("winW", "0"), out v)) return v; return 0; }
+        int SavedH() { int v; if (int.TryParse(CfgGet("winH", "0"), out v)) return v; return 0; }
+        bool HasSavedSize() { return SavedW() >= 200 && SavedH() >= 150; }
+
+        void SetBaseContentW()
+        {
+            int sb = SystemInformation.VerticalScrollBarWidth;
+            BaseContentW = (HasSavedSize() ? SavedW() : FormWidth) - 4 - sb;
+            if (BaseContentW < 60) BaseContentW = 60;
+        }
+
+        void SetBoundsGuarded(Rectangle r)
+        {
+            settingBounds = true;
+            try { Bounds = r; }
+            finally { settingBounds = false; }
+        }
+
+        void RelayoutContentOnly()
+        {
+            if (Host.Controls.Count == 0) return;
+            int w = (int)Math.Round(BaseContentW * zoom);
+            if (w < 60) w = 60;
+            Host.SuspendLayout();
+            int y = 0, idx = 0;
+            foreach (Control c in Host.Controls)
+            {
+                PictureBox pb = c as PictureBox;
+                if (pb == null) continue;
+                double r = (idx < ratios.Count) ? ratios[idx] : 1.3;
+                int h = (int)Math.Round(w * r);
+                if (h < 10) h = 10;
+                pb.SetBounds(1, y, w, h);
+                y += h + Gap;
+                idx++;
+            }
+            Host.ResumeLayout();
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_NCHITTEST = 0x0084;
+            const int WM_EXITSIZEMOVE = 0x0232;
+            if (m.Msg == WM_EXITSIZEMOVE) { base.WndProc(ref m); OnUserResized(); return; }
+            if (m.Msg == WM_NCHITTEST)
+            {
+                base.WndProc(ref m);
+                int lp = m.LParam.ToInt32();
+                int sx = (short)(lp & 0xFFFF);
+                int sy = (short)((lp >> 16) & 0xFFFF);
+                Point c = PointToClient(new Point(sx, sy));
+                int grip = 10;
+                bool right = c.X >= ClientSize.Width - grip;
+                bool bottom = c.Y >= ClientSize.Height - grip;
+                bool left = c.X <= grip;
+                if (right && bottom) { m.Result = (IntPtr)17; return; } // HTBOTTOMRIGHT
+                if (left && bottom) { m.Result = (IntPtr)16; return; }  // HTBOTTOMLEFT
+                if (right) { m.Result = (IntPtr)11; return; }           // HTRIGHT
+                if (left) { m.Result = (IntPtr)10; return; }            // HTLEFT
+                if (bottom) { m.Result = (IntPtr)15; return; }          // HTBOTTOM
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        // Solo cuando el usuario TERMINA de arrastrar un borde (no en cada Show).
+        void OnUserResized()
+        {
+            if (!Visible) return;
+            try
+            {
+                CfgSet("winW", Width.ToString());
+                CfgSet("winH", Height.ToString());
+                if (mode == MODE_PAGES && ratios.Count > 0)
+                {
+                    BaseContentW = ClientSize.Width - 2 - SystemInformation.VerticalScrollBarWidth - 2;
+                    if (BaseContentW < 60) BaseContentW = 60;
+                    RelayoutContentOnly();
+                }
+                PositionZoomBar();
+                if (actionBar != null && actionBar.Visible) ShowActionBar();
+            }
+            catch { }
+        }
+
         public void ShowLoading(string text, Point near)
         {
             mode = MODE_PAGES;
@@ -888,6 +1089,9 @@ class PdfHoverPreview
             zoomBar.Visible = false;
             Host.Visible = false;
             ApplyTheme();
+            textBox.WordWrap = false;
+            textBox.Clear();
+            textBox.Font = new Font("Consolas", 9.5f);
             textBox.Text = text;
             textBox.Visible = true;
             textBox.BringToFront();
@@ -897,18 +1101,120 @@ class PdfHoverPreview
             if (!Visible) Show();
         }
 
+        public void ShowMarkdown(string raw, Point near)
+        {
+            mode = MODE_MD;
+            loading.Visible = false;
+            ClearHost();
+            ratios.Clear();
+            zoomBar.Visible = false;
+            Host.Visible = false;
+            ApplyTheme();
+            textBox.Visible = true;
+            textBox.BringToFront();
+            textBox.WordWrap = true;
+            try { RenderMarkdown(raw); }
+            catch { textBox.WordWrap = false; textBox.Font = new Font("Consolas", 9.5f); textBox.Text = raw; }
+            try { textBox.Select(0, 0); textBox.ScrollToCaret(); } catch { }
+            SizeAndPlaceText(near);
+            ShowActionBar();
+            if (!Visible) Show();
+        }
+
+        void AppendRun(string text, Font font, Color color)
+        {
+            int start = textBox.TextLength;
+            textBox.AppendText(text);
+            textBox.Select(start, text.Length);
+            textBox.SelectionColor = color;
+            textBox.SelectionFont = font;
+            textBox.SelectionLength = 0;
+        }
+
+        void AppendInline(string s, string fam, float size, Color color, FontStyle baseStyle)
+        {
+            int i = 0;
+            while (i < s.Length)
+            {
+                if (s[i] == '`')
+                {
+                    int e = s.IndexOf('`', i + 1);
+                    if (e > i) { AppendRun(s.Substring(i + 1, e - i - 1), new Font("Consolas", size - 0.5f, baseStyle), color); i = e + 1; continue; }
+                }
+                if (i + 1 < s.Length && s[i] == '*' && s[i + 1] == '*')
+                {
+                    int e = s.IndexOf("**", i + 2);
+                    if (e > i) { AppendRun(s.Substring(i + 2, e - i - 2), new Font(fam, size, baseStyle | FontStyle.Bold), color); i = e + 2; continue; }
+                }
+                if (s[i] == '*')
+                {
+                    int e = s.IndexOf('*', i + 1);
+                    if (e > i) { AppendRun(s.Substring(i + 1, e - i - 1), new Font(fam, size, baseStyle | FontStyle.Italic), color); i = e + 1; continue; }
+                }
+                int j = i;
+                while (j < s.Length && s[j] != '`' && s[j] != '*') j++;
+                if (j == i) j = i + 1;
+                AppendRun(s.Substring(i, j - i), new Font(fam, size, baseStyle), color);
+                i = j;
+            }
+        }
+
+        void RenderMarkdown(string raw)
+        {
+            textBox.Clear();
+            bool dark = IsDarkTheme();
+            Color fg = dark ? Color.FromArgb(230, 230, 230) : Color.FromArgb(30, 30, 30);
+            Color hcol = dark ? Color.FromArgb(120, 170, 255) : Color.FromArgb(29, 78, 216);
+            Color quote = dark ? Color.FromArgb(165, 165, 165) : Color.FromArgb(110, 110, 110);
+            string fam = "Segoe UI"; float sz = 10.5f; string mono = "Consolas";
+            string[] lines = raw.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+            bool fence = false;
+            foreach (string ln in lines)
+            {
+                if (ln.TrimStart().StartsWith("```")) { fence = !fence; continue; }
+                if (fence) { AppendRun(ln + "\n", new Font(mono, sz - 0.5f), fg); continue; }
+                string t = ln.TrimEnd();
+                if (t.StartsWith("### ")) { AppendRun(t.Substring(4) + "\n", new Font(fam, sz + 1f, FontStyle.Bold), hcol); continue; }
+                if (t.StartsWith("## ")) { AppendRun(t.Substring(3) + "\n", new Font(fam, sz + 3f, FontStyle.Bold), hcol); continue; }
+                if (t.StartsWith("# ")) { AppendRun(t.Substring(2) + "\n", new Font(fam, sz + 6f, FontStyle.Bold), hcol); continue; }
+                if (t.StartsWith("> ")) { AppendInline(t.Substring(2), fam, sz, quote, FontStyle.Italic); AppendRun("\n", new Font(fam, sz), fg); continue; }
+                string ts = t.TrimStart();
+                if (ts.StartsWith("- ") || ts.StartsWith("* "))
+                {
+                    string ind = ln.Substring(0, ln.Length - ln.TrimStart().Length);
+                    AppendRun(ind + "   • ", new Font(fam, sz), fg);
+                    AppendInline(ts.Substring(2), fam, sz, fg, FontStyle.Regular);
+                    AppendRun("\n", new Font(fam, sz), fg);
+                    continue;
+                }
+                if (t.Trim().Length == 0) { AppendRun("\n", new Font(fam, sz), fg); continue; }
+                AppendInline(t, fam, sz, fg, FontStyle.Regular);
+                AppendRun("\n", new Font(fam, sz), fg);
+            }
+            textBox.Select(0, 0);
+        }
+
         void SizeAndPlaceText(Point near)
         {
             Screen scr = Screen.FromPoint(near);
-            int winW = Math.Min(640, scr.WorkingArea.Width - 8);
-            int winH = (int)(scr.WorkingArea.Height * 0.70);
+            int winW, winH;
+            if (HasSavedSize())
+            {
+                winW = Math.Min(SavedW(), scr.WorkingArea.Width - 8);
+                winH = Math.Min(SavedH(), (int)(scr.WorkingArea.Height * 0.95));
+            }
+            else
+            {
+                winW = Math.Min(640, scr.WorkingArea.Width - 8);
+                winH = (int)(scr.WorkingArea.Height * 0.70);
+            }
             if (winH < 220) winH = 220;
             int x = near.X + 22, y = near.Y + 18;
             if (x + winW + 6 > scr.WorkingArea.Right) x = scr.WorkingArea.Right - winW - 6;
             if (x < scr.WorkingArea.Left) x = scr.WorkingArea.Left + 4;
             if (y + winH + 6 > scr.WorkingArea.Bottom) y = scr.WorkingArea.Bottom - winH - 6;
             if (y < scr.WorkingArea.Top) y = scr.WorkingArea.Top + 4;
-            Bounds = new Rectangle(x, y, winW, winH);
+            SetBoundsGuarded(new Rectangle(x, y, winW, winH));
             PositionZoomBar();
         }
 
@@ -923,6 +1229,7 @@ class PdfHoverPreview
             ClearHost();
             ratios.Clear();
             zoom = SavedZoom();
+            SetBaseContentW();
             Host.SuspendLayout();
             for (int i = 0; i < rs.Length; i++)
             {
@@ -960,6 +1267,7 @@ class PdfHoverPreview
             ClearHost();
             ratios.Clear();
             zoom = SavedZoom();
+            SetBaseContentW();
             ratios.Add((double)bmp.Height / bmp.Width);
             Host.SuspendLayout();
             PictureBox pb = new PictureBox();
@@ -1013,8 +1321,17 @@ class PdfHoverPreview
             int sbW = SystemInformation.VerticalScrollBarWidth;
             int maxW = scr.WorkingArea.Width - 8;
             int maxH = (int)(scr.WorkingArea.Height * 0.95);
-            int winW = Math.Min(contentW + sbW + 4, maxW);
-            int winH = Math.Min(contentHeight + 2, maxH);
+            int winW, winH;
+            if (HasSavedSize())
+            {
+                winW = Math.Min(SavedW(), maxW);
+                winH = Math.Min(SavedH(), maxH);
+            }
+            else
+            {
+                winW = Math.Min(contentW + sbW + 4, maxW);
+                winH = Math.Min(contentHeight + 2, maxH);
+            }
             if (winW < 120) winW = 120;
             if (winH < 80) winH = 80;
 
@@ -1025,7 +1342,7 @@ class PdfHoverPreview
             if (x < scr.WorkingArea.Left) x = scr.WorkingArea.Left + 4;
             if (y + winH + 6 > scr.WorkingArea.Bottom) y = scr.WorkingArea.Bottom - winH - 6;
             if (y < scr.WorkingArea.Top) y = scr.WorkingArea.Top + 4;
-            Bounds = new Rectangle(x, y, winW, winH);
+            SetBoundsGuarded(new Rectangle(x, y, winW, winH));
             PositionZoomBar();
         }
 
@@ -1075,7 +1392,7 @@ class PdfHoverPreview
         public void ScrollBy(int dy)
         {
             if (!Visible) return;
-            if (mode == MODE_TEXT)
+            if (mode == MODE_TEXT || mode == MODE_MD)
             {
                 int lines = dy / 30;
                 if (lines == 0) lines = (dy > 0) ? 1 : -1;
@@ -1090,7 +1407,7 @@ class PdfHoverPreview
         public void ScrollByH(int dx)
         {
             if (!Visible) return;
-            if (mode == MODE_TEXT)
+            if (mode == MODE_TEXT || mode == MODE_MD)
             {
                 int chars = dx / 16;
                 if (chars == 0) chars = (dx > 0) ? 1 : -1;
@@ -1178,6 +1495,14 @@ class PdfHoverPreview
             speedItem.DropDownItems.Add(sNormal);
             speedItem.DropDownItems.Add(sSlow);
             menu.Items.Add(speedItem);
+
+            ToolStripMenuItem resetSize = new ToolStripMenuItem("Restablecer tamano de la ventana");
+            resetSize.Click += delegate
+            {
+                CfgSet("winW", "0"); CfgSet("winH", "0"); CfgSet("zoom", "1");
+                tray.ShowBalloonTip(2500, "Vista Previa", "Se restablecio el tamano y el zoom de la ventana.", ToolTipIcon.Info);
+            };
+            menu.Items.Add(resetSize);
 
             menu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem exitItem = new ToolStripMenuItem("Salir");
@@ -1286,7 +1611,7 @@ class PdfHoverPreview
                     if (gen == myGen) preview.ShowSingleImage(bmp, at);
                     else bmp.Dispose();
                 }
-                catch { if (gen == myGen) preview.ShowLoading("No se pudo abrir la imagen", at); }
+                catch (Exception ex) { Log("imagen " + hit.Path, ex); if (gen == myGen) preview.ShowLoading("No se pudo abrir la imagen", at); }
             }
             else if (hit.Kind == KIND_PDF)
             {
@@ -1295,19 +1620,26 @@ class PdfHoverPreview
             else if (hit.Kind == KIND_OFFICE)
             {
                 preview.ShowLoading("Generando vista previa...", at);
+                string officePath = hit.Path;
                 Thread t = new Thread(delegate()
                 {
                     try
                     {
-                        string pdf = OfficeToPdf(hit.Path);
+                        string pdf;
+                        lock (OfficeLock) // una conversion de Office a la vez (no amontonar)
+                        {
+                            if (gen != myGen) return; // otra ya la reemplazo mientras esperaba el turno
+                            pdf = OfficeToPdf(officePath);
+                        }
                         if (gen != myGen) return;
                         preview.BeginInvoke((MethodInvoker)delegate
                         {
                             if (gen == myGen) StartPdf(pdf, myGen, at);
                         });
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Log("office " + officePath, ex);
                         if (gen != myGen) return;
                         try { preview.BeginInvoke((MethodInvoker)delegate { if (gen == myGen) preview.ShowLoading("No se pudo generar la vista previa", at); }); }
                         catch { }
@@ -1317,7 +1649,7 @@ class PdfHoverPreview
                 t.SetApartmentState(ApartmentState.STA); // Office COM prefiere STA
                 t.Start();
             }
-            else if (hit.Kind == KIND_TEXT || hit.Kind == KIND_ZIP || hit.Kind == KIND_EMAIL)
+            else if (hit.Kind == KIND_TEXT || hit.Kind == KIND_MARKDOWN || hit.Kind == KIND_ZIP || hit.Kind == KIND_EMAIL)
             {
                 int kind = hit.Kind; string path = hit.Path;
                 preview.ShowLoading("Cargando vista previa...", at);
@@ -1326,17 +1658,52 @@ class PdfHoverPreview
                     string text;
                     try
                     {
-                        if (kind == KIND_TEXT) text = ReadTextPreview(path);
+                        if (kind == KIND_TEXT || kind == KIND_MARKDOWN) text = ReadTextPreview(path);
                         else if (kind == KIND_ZIP) text = ReadZipListing(path);
                         else text = ReadEmailPreview(path);
                     }
-                    catch (Exception ex) { text = "No se pudo mostrar la vista previa:\r\n" + ex.Message; }
+                    catch (Exception ex) { Log("texto " + path, ex); text = "No se pudo mostrar la vista previa:\r\n" + ex.Message; }
                     if (gen != myGen) return;
-                    try { preview.BeginInvoke((MethodInvoker)delegate { if (gen == myGen) preview.ShowText(text, at); }); }
+                    try
+                    {
+                        preview.BeginInvoke((MethodInvoker)delegate
+                        {
+                            if (gen != myGen) return;
+                            if (kind == KIND_MARKDOWN) preview.ShowMarkdown(text, at);
+                            else preview.ShowText(text, at);
+                        });
+                    }
                     catch { }
                 });
                 t.IsBackground = true;
                 t.SetApartmentState(ApartmentState.STA); // .msg usa Outlook COM (STA)
+                t.Start();
+            }
+            else if (hit.Kind == KIND_VIDEO)
+            {
+                string vpath = hit.Path;
+                preview.ShowLoading("Cargando vista previa...", at);
+                Thread t = new Thread(delegate()
+                {
+                    try
+                    {
+                        Bitmap bmp = ShellThumbnail(vpath, 1024); // primer cuadro / miniatura
+                        if (gen != myGen) { bmp.Dispose(); return; }
+                        preview.BeginInvoke((MethodInvoker)delegate
+                        {
+                            if (gen == myGen) preview.ShowSingleImage(bmp, at); else bmp.Dispose();
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("video " + vpath, ex);
+                        if (gen != myGen) return;
+                        try { preview.BeginInvoke((MethodInvoker)delegate { if (gen == myGen) preview.ShowLoading("No se pudo mostrar la vista previa del video", at); }); }
+                        catch { }
+                    }
+                });
+                t.IsBackground = true;
+                t.SetApartmentState(ApartmentState.STA);
                 t.Start();
             }
         }
@@ -1471,8 +1838,9 @@ class PdfHoverPreview
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Log("pdf " + pdfPath, ex);
                 if (gen != myGen) return;
                 try { preview.BeginInvoke((MethodInvoker)delegate { if (gen == myGen) preview.ShowLoading("No se pudo mostrar el PDF", at); }); }
                 catch { }
@@ -1535,19 +1903,21 @@ class PdfHoverPreview
         // Version simple: solo corre la vista previa. NO se auto-copia ni toca
         // el registro (eso activaba el antivirus). La instalacion y el arranque
         // con Windows se hacen por fuera (acceso directo en la carpeta Inicio).
+        EnableDpiAwareness(); // antes de crear cualquier ventana
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
         // Guardian: una vista previa nunca debe tumbar el programa ni mostrar el
-        // cuadro de "Excepcion no controlada". Tragamos las excepciones sueltas.
+        // cuadro de "Excepcion no controlada". Tragamos (y registramos) las sueltas.
         try
         {
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            Application.ThreadException += delegate(object s, System.Threading.ThreadExceptionEventArgs te) { };
-            AppDomain.CurrentDomain.UnhandledException += delegate(object s, UnhandledExceptionEventArgs ue) { };
+            Application.ThreadException += delegate(object s, System.Threading.ThreadExceptionEventArgs te) { Log("ThreadException", te.Exception); };
+            AppDomain.CurrentDomain.UnhandledException += delegate(object s, UnhandledExceptionEventArgs ue) { Log("UnhandledException", ue.ExceptionObject as Exception); };
         }
         catch { }
 
+        Log("Inicio OK");
         Application.Run(new TrayContext());
     }
 }
