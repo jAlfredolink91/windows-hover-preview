@@ -300,18 +300,87 @@ class PdfHoverPreview
         {
             AutomationElement win = AutomationElement.FromHandle(hwnd);
             if (win == null) return null;
-            AutomationElementCollection tbs = win.FindAll(TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ToolBar));
-            foreach (AutomationElement tb in tbs)
+            // La barra de direcciones puede ser ToolBar o Pane segun la carpeta.
+            OrCondition cond = new OrCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ToolBar),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Pane));
+            AutomationElementCollection els = win.FindAll(TreeScope.Descendants, cond);
+            foreach (AutomationElement e in els)
             {
                 string nm = null;
-                try { nm = tb.Current.Name; } catch { }
+                try { nm = e.Current.Name; } catch { }
                 if (string.IsNullOrEmpty(nm)) continue;
-                int idx = IndexOfPath(nm);
-                if (idx < 0) continue;
-                string p = nm.Substring(idx).Trim();
-                if (p.Length > 0 && Directory.Exists(p)) return p;
+                if (nm.IndexOf("Direc", StringComparison.OrdinalIgnoreCase) < 0
+                    && IndexOfPath(nm) < 0) continue; // acelera: solo barras de direcciones
+                string f = ExtractFolder(nm);
+                if (f != null) return f;
             }
+        }
+        catch { }
+        return null;
+    }
+
+    // De un texto como "Direccion: C:\ruta" o "Direccion: Documentos" saca la carpeta real.
+    static string ExtractFolder(string nm)
+    {
+        // 1) Ruta directa tipo C:\ o UNC \\
+        int idx = IndexOfPath(nm);
+        if (idx >= 0)
+        {
+            string p = nm.Substring(idx).Trim();
+            if (p.Length > 0 && Directory.Exists(p)) return p;
+        }
+        // 2) Nombre de carpeta especial tras "...: " (Documentos, Descargas, etc.)
+        int c = nm.IndexOf(": ");
+        if (c >= 0)
+        {
+            string disp = nm.Substring(c + 2).Trim();
+            if (!string.IsNullOrEmpty(disp))
+            {
+                string mapped = MapKnownFolder(disp);
+                if (mapped != null) return mapped;
+            }
+        }
+        return null;
+    }
+
+    // Traduce el nombre mostrado de una carpeta especial a su ruta real (segun el idioma del sistema).
+    static string MapKnownFolder(string disp)
+    {
+        try
+        {
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string[] candidates = new string[]
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                Path.Combine(profile, "Downloads"),
+                profile
+            };
+            foreach (string path in candidates)
+            {
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) continue;
+                string dn = ShellDisplayName(path);
+                if (dn != null && string.Equals(dn, disp, StringComparison.OrdinalIgnoreCase))
+                    return path;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    static string ShellDisplayName(string path)
+    {
+        try
+        {
+            Type t = Type.GetTypeFromProgID("Shell.Application");
+            if (t == null) return null;
+            dynamic shell = Activator.CreateInstance(t);
+            dynamic ns = shell.NameSpace(path);
+            if (ns != null) { dynamic self = ns.Self; return (string)self.Name; }
         }
         catch { }
         return null;
