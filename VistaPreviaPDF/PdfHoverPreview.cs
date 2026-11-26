@@ -551,23 +551,30 @@ class PdfHoverPreview
     // ---------- Deteccion del archivo bajo el cursor ----------
     static Hit DetectUnderCursor(Point pt)
     {
-        AutomationElement el = AutomationElement.FromPoint(new System.Windows.Point(pt.X, pt.Y));
-        if (el == null) return null;
-
-        AutomationElement item = el;
-        TreeWalker walker = TreeWalker.ControlViewWalker;
-        int guard = 0;
-        while (item != null && guard++ < 14)
+        AutomationElement item = null;
+        try
         {
-            ControlType ct = null;
-            try { ct = item.Current.ControlType; } catch { }
-            if (ct == ControlType.ListItem || ct == ControlType.DataItem) break;
-            item = walker.GetParent(item);
+            AutomationElement el = AutomationElement.FromPoint(new System.Windows.Point(pt.X, pt.Y));
+            if (el != null)
+            {
+                AutomationElement cur = el;
+                TreeWalker walker = TreeWalker.ControlViewWalker;
+                int guard = 0;
+                while (cur != null && guard++ < 14)
+                {
+                    ControlType ct = null;
+                    try { ct = cur.Current.ControlType; } catch { }
+                    if (ct == ControlType.ListItem || ct == ControlType.DataItem) { item = cur; break; }
+                    cur = walker.GetParent(cur);
+                }
+            }
         }
+        catch { }
+
+        // Fallback (Inicio/Galeria y vistas modernas): FromPoint devuelve un panel generico;
+        // buscamos el elemento cuyo rectangulo contiene el cursor.
+        if (item == null) item = FindItemAtPoint(pt);
         if (item == null) return null;
-        ControlType fct = null;
-        try { fct = item.Current.ControlType; } catch { return null; }
-        if (fct != ControlType.ListItem && fct != ControlType.DataItem) return null;
 
         string name;
         try { name = item.Current.Name; } catch { return null; }
@@ -588,19 +595,50 @@ class PdfHoverPreview
             if (dlg != null) found = ResolveInFolder(dlg, name);
         }
 
-        // 3) Carpetas especiales (Papelera, Inicio, Galeria, OneDrive, Este equipo...):
-        //    pedir al Shell la RUTA REAL del elemento bajo el cursor.
+        // 3) Carpetas especiales (Papelera, OneDrive, Este equipo...): ruta real via Shell.
         if (found == null)
         {
             string real = ShellItemPath(hwnd, name);
             if (real != null && File.Exists(real)) found = real;
         }
 
+        // 4) Vistas "Inicio" y "Galeria" (archivos recientes/fotos): el elemento muestra
+        //    su ubicacion como texto (ej. "Descargas"); la combinamos con el nombre.
+        if (found == null) found = ResolveFromItemLocation(item, name);
+
         if (found == null) return null;
         int kind = KindOf(found);
         if (kind == KIND_NONE) return null;
         Hit h = new Hit(); h.Path = found; h.Kind = kind;
         return h;
+    }
+
+    // Encuentra el ListItem/DataItem cuyo rectangulo contiene el punto (para Inicio/Galeria).
+    static AutomationElement FindItemAtPoint(Point pt)
+    {
+        try
+        {
+            IntPtr hwnd = GetAncestor(WindowFromPoint(new POINT(pt.X, pt.Y)), GA_ROOT);
+            AutomationElement win = AutomationElement.FromHandle(hwnd);
+            if (win == null) return null;
+            OrCondition cond = new OrCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.DataItem));
+            AutomationElementCollection items = win.FindAll(TreeScope.Descendants, cond);
+            foreach (AutomationElement it in items)
+            {
+                try
+                {
+                    System.Windows.Rect r = it.Current.BoundingRectangle;
+                    if (r.Width <= 0 || r.Height <= 0) continue;
+                    if (pt.X >= r.Left && pt.X <= r.Right && pt.Y >= r.Top && pt.Y <= r.Bottom)
+                        return it;
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return null;
     }
 
     // Busca "name" dentro de una carpeta real (con variantes de extension ocultas).
@@ -658,6 +696,57 @@ class PdfHoverPreview
                 }
                 return null;
             }
+        }
+        catch { }
+        return null;
+    }
+
+    // Para "Inicio"/"Galeria": el elemento muestra su ubicacion como texto hijo.
+    // Tomamos esa ubicacion (ej. "Descargas" o "Documentos\Sub\...") y la volvemos ruta real.
+    static string ResolveFromItemLocation(AutomationElement item, string name)
+    {
+        try
+        {
+            AutomationElementCollection texts = item.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text));
+            foreach (AutomationElement te in texts)
+            {
+                string tx = null;
+                try { tx = te.Current.Name; } catch { }
+                if (string.IsNullOrEmpty(tx)) continue;
+                if (tx == name) continue;        // es el nombre del archivo
+                if (LooksLikeDate(tx)) continue; // es la fecha
+                string folder = ResolveDisplayLocation(tx);
+                if (folder == null) continue;
+                string r = ResolveInFolder(folder, name);
+                if (r != null) return r;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    static bool LooksLikeDate(string s)
+    {
+        int d = 0;
+        foreach (char c in s) if (c >= '0' && c <= '9') d++;
+        return d >= 4; // fechas/horas tienen varios digitos
+    }
+
+    // "Descargas" -> C:\Users\...\Downloads ;  "Documentos\Sub" -> C:\Users\...\Documents\Sub
+    static string ResolveDisplayLocation(string loc)
+    {
+        try
+        {
+            loc = loc.Replace("\u200e", "").Replace("\u200f", "").Trim();
+            if (loc.Length == 0) return null;
+            if (Directory.Exists(loc)) return loc; // ya es ruta real
+            string[] parts = loc.Split('\\');
+            string root = MapKnownFolder(parts[0]);
+            if (root == null) return null;
+            string folder = root;
+            for (int i = 1; i < parts.Length; i++) folder = Path.Combine(folder, parts[i]);
+            if (Directory.Exists(folder)) return folder;
         }
         catch { }
         return null;
