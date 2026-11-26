@@ -93,9 +93,42 @@ class PdfHoverPreview
     static readonly string[] ImageExts = { ".jpg", ".jpeg", ".jfif", ".png", ".gif", ".bmp", ".tif", ".tiff", ".ico", ".webp", ".heic", ".heif" };
     static readonly string[] OfficeExts = { ".doc", ".docx", ".docm", ".rtf", ".xls", ".xlsx", ".xlsm", ".xlsb", ".ppt", ".pptx", ".pptm",
                                             ".odt", ".ods", ".odp" }; // OpenDocument (OpenOffice/LibreOffice), via MS Office
-    static readonly string[] TextExts = { ".txt", ".csv", ".tsv", ".log", ".xml", ".json", ".ini", ".cfg", ".conf", ".config", ".yml", ".yaml",
-                                          ".cs", ".js", ".ts", ".html", ".htm", ".css", ".bat", ".cmd", ".ps1", ".py", ".sql", ".java", ".c", ".cpp", ".h", ".php", ".vb", ".reg" };
-    static readonly string[] MdExts = { ".md", ".markdown" };
+    static readonly string[] TextExts = {
+        // Texto / datos
+        ".txt", ".text", ".csv", ".tsv", ".tab", ".log", ".out", ".err", ".trace", ".list", ".lst",
+        ".nfo", ".asc", ".me", ".diff", ".patch", ".rej", ".dat",
+        // Config
+        ".ini", ".cfg", ".conf", ".config", ".yml", ".yaml", ".toml", ".properties", ".env",
+        ".editorconfig", ".gitignore", ".gitattributes", ".gitconfig", ".dockerignore", ".dockerfile",
+        ".npmrc", ".yarnrc", ".babelrc", ".eslintrc", ".prettierrc", ".plist", ".manifest", ".inf", ".url", ".desktop", ".reg",
+        // Marcado / datos estructurados
+        ".xml", ".json", ".jsonl", ".ndjson", ".geojson", ".json5", ".xaml", ".xsd", ".xsl", ".xslt",
+        ".svg", ".rss", ".atom", ".graphql", ".gql", ".proto", ".avsc", ".csproj", ".vbproj", ".fsproj",
+        ".sln", ".vcxproj", ".props", ".targets", ".nuspec",
+        // Documentacion
+        ".rst", ".adoc", ".asciidoc", ".tex", ".bib", ".org", ".textile", ".wiki", ".readme", ".changelog", ".todo",
+        // Web
+        ".html", ".htm", ".xhtml", ".css", ".scss", ".sass", ".less", ".styl",
+        ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".astro",
+        ".pug", ".jade", ".ejs", ".hbs", ".handlebars", ".mustache", ".twig",
+        // Lenguajes
+        ".cs", ".csx", ".vb", ".fs", ".fsx", ".fsi",
+        ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".inl", ".ino",
+        ".java", ".kt", ".kts", ".scala", ".groovy", ".gradle",
+        ".py", ".pyw", ".rb", ".php", ".go", ".rs", ".swift", ".dart", ".lua", ".r",
+        ".pl", ".pm", ".tcl", ".m", ".mm", ".jl", ".nim", ".cr", ".d", ".vala", ".zig",
+        ".hs", ".ml", ".mli", ".clj", ".cljs", ".cljc", ".edn", ".ex", ".exs", ".erl", ".hrl",
+        ".lisp", ".lsp", ".scm", ".rkt", ".pas", ".f", ".f90", ".f95", ".for", ".cob", ".cbl",
+        ".asm", ".s", ".v", ".sv", ".vhd", ".vhdl", ".ada", ".adb", ".ads",
+        // Scripts de shell
+        ".sh", ".bash", ".zsh", ".fish", ".ksh", ".awk", ".sed", ".bat", ".cmd", ".ps1", ".psm1", ".psd1", ".vbs", ".wsf",
+        // Build / make
+        ".make", ".mak", ".mk", ".cmake", ".ninja", ".bazel", ".bzl", ".sbt",
+        // SQL y consultas
+        ".sql", ".ddl", ".dml", ".psql", ".pgsql", ".mysql", ".cql", ".hql",
+        // Subtitulos
+        ".srt", ".vtt", ".sub", ".ass", ".lrc" };
+    static readonly string[] MdExts = { ".md", ".markdown", ".mdown", ".mkd", ".mdx" };
     static readonly string[] ZipExts = { ".zip" };
     static readonly string[] EmailExts = { ".eml", ".msg" };
     static readonly string[] VideoExts = { ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".mpg", ".mpeg", ".webm", ".flv", ".3gp" };
@@ -1046,7 +1079,7 @@ class PdfHoverPreview
         // Solo cuando el usuario TERMINA de arrastrar un borde (no en cada Show).
         void OnUserResized()
         {
-            if (!Visible) return;
+            if (settingBounds || !Visible) return;
             try
             {
                 CfgSet("winW", Width.ToString());

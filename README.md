@@ -26,7 +26,7 @@ y aparece una vista previa flotante — sin abrir el archivo ni cargar programas
 - 📊 **Excel** — .xls, .xlsx
 - 📽️ **PowerPoint** — .ppt, .pptx
 - 📂 **OpenDocument** — .odt, .ods, .odp (OpenOffice/LibreOffice, vía MS Office)
-- 📃 **Texto y código** — .txt, .csv, .log, .xml, .json, .cs, .js, .html, etc.
+- 📃 **Texto y código** — +150 extensiones: SQL, Python, Go, Rust, Java, C/C++, JS/TS, PHP, Ruby, Swift, Kotlin, YAML, TOML, JSON, XML, HTML, CSS/SCSS, .sh/.bat/.ps1, subtítulos (.srt) y mucho más
 - 📝 **Markdown** — .md con formato (títulos, negrita, listas, código)
 - 🗜️ **ZIP** — lista el contenido sin descomprimir
 - 📧 **Correos** — .eml (y .msg si tienes Outlook)
