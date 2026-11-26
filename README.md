@@ -41,6 +41,8 @@ y aparece una vista previa flotante — sin abrir el archivo ni cargar programas
 - ⏱️ **Tiempo de aparición** ajustable desde el menú de la bandeja
 - 🗂️ Funciona también en los **cuadros de diálogo "Abrir / Guardar"** de otros
   programas (útil para ver qué archivo vas a adjuntar antes de elegirlo).
+- 🗑️ Funciona también en la **Papelera de reciclaje** y en las vistas **Inicio**
+  y **Galería** del Explorador (resuelve la ruta real del archivo).
 - 🧰 Vive en la **bandeja del sistema** (ícono de lupa azul) con opciones de
   Pausar, Iniciar con Windows, Tiempo de aparición y Salir.
 

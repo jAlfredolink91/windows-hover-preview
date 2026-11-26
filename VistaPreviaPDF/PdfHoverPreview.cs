@@ -574,25 +574,93 @@ class PdfHoverPreview
         if (string.IsNullOrEmpty(name)) return null;
 
         IntPtr hwnd = GetAncestor(WindowFromPoint(new POINT(pt.X, pt.Y)), GA_ROOT);
-        string folder = GetExplorerFolderPath(hwnd);
-        if (folder == null) folder = GetDialogFolderPath(hwnd); // dialogos Abrir/Guardar
-        if (folder == null) return null;
 
-        string full = Path.Combine(folder, name);
         string found = null;
-        if (File.Exists(full)) found = full;
-        else
+
+        // 1) Carpeta normal del Explorador (rapido)
+        string folder = GetExplorerFolderPath(hwnd);
+        if (folder != null) found = ResolveInFolder(folder, name);
+
+        // 2) Dialogo Abrir/Guardar de Windows
+        if (found == null)
         {
-            foreach (string ext in AllExts)
-            {
-                if (File.Exists(full + ext)) { found = full + ext; break; }
-            }
+            string dlg = GetDialogFolderPath(hwnd);
+            if (dlg != null) found = ResolveInFolder(dlg, name);
         }
+
+        // 3) Carpetas especiales (Papelera, Inicio, Galeria, OneDrive, Este equipo...):
+        //    pedir al Shell la RUTA REAL del elemento bajo el cursor.
+        if (found == null)
+        {
+            string real = ShellItemPath(hwnd, name);
+            if (real != null && File.Exists(real)) found = real;
+        }
+
         if (found == null) return null;
         int kind = KindOf(found);
         if (kind == KIND_NONE) return null;
         Hit h = new Hit(); h.Path = found; h.Kind = kind;
         return h;
+    }
+
+    // Busca "name" dentro de una carpeta real (con variantes de extension ocultas).
+    static string ResolveInFolder(string folder, string name)
+    {
+        if (string.IsNullOrEmpty(folder)) return null;
+        try
+        {
+            string full = Path.Combine(folder, name);
+            if (File.Exists(full)) return full;
+            foreach (string ext in AllExts)
+                if (File.Exists(full + ext)) return full + ext;
+        }
+        catch { }
+        return null;
+    }
+
+    // Ruta real del elemento "name" en la ventana (carpetas especiales/virtuales).
+    // Para la Papelera devuelve el archivo fisico en $Recycle.Bin; para Inicio/Galeria,
+    // el archivo original al que apunta el elemento.
+    static string ShellItemPath(IntPtr hwnd, string name)
+    {
+        try
+        {
+            Type shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType == null) return null;
+            dynamic shell = Activator.CreateInstance(shellType);
+            dynamic windows = shell.Windows();
+            int count = (int)windows.Count;
+            for (int i = 0; i < count; i++)
+            {
+                dynamic w = windows.Item(i);
+                if (w == null) continue;
+                IntPtr h;
+                try { h = new IntPtr((long)w.HWND); } catch { continue; }
+                if (h != hwnd) continue;
+                dynamic folder = w.Document.Folder;
+                dynamic items = folder.Items();
+                int n = (int)items.Count;
+                if (n > 5000) n = 5000; // tope de seguridad para carpetas enormes
+                for (int k = 0; k < n; k++)
+                {
+                    dynamic it = items.Item(k);
+                    if (it == null) continue;
+                    string nm;
+                    try { nm = (string)it.Name; } catch { continue; }
+                    if (!string.Equals(nm, name, StringComparison.OrdinalIgnoreCase)) continue;
+                    try
+                    {
+                        string p = (string)it.Path;
+                        if (!string.IsNullOrEmpty(p) && File.Exists(p)) return p;
+                    }
+                    catch { }
+                    return null;
+                }
+                return null;
+            }
+        }
+        catch { }
+        return null;
     }
 
     static string GetExplorerFolderPath(IntPtr hwnd)
