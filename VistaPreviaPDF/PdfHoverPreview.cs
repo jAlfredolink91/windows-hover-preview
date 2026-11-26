@@ -1344,16 +1344,48 @@ class PdfHoverPreview
         static Bitmap LoadImage(string path)
         {
             byte[] data = File.ReadAllBytes(path);
+            Image src = null;
             try
             {
                 using (MemoryStream ms = new MemoryStream(data))
-                    return new Bitmap(ms);
+                    src = new Bitmap(ms);
             }
-            catch
+            catch { src = null; }
+
+            if (src == null)
             {
                 // GDI no soporta HEIC/WebP: usar el decodificador WIC de Windows
                 return LoadImageWic(data);
             }
+
+            // Re-dibujar a un bitmap limpio 32bpp. Algunos .ico (o imagenes raras)
+            // cargan bien pero fallan con "Error generico en GDI+" AL PINTARSE en el
+            // PictureBox (fuera de try/catch). Al re-dibujar aqui, cualquier fallo se
+            // atrapa en este metodo y no tumba el programa.
+            try
+            {
+                return ToSafeBitmap(src);
+            }
+            catch
+            {
+                try { src.Dispose(); } catch { }
+                return LoadImageWic(data); // ultimo intento con WIC
+            }
+        }
+
+        static Bitmap ToSafeBitmap(Image src)
+        {
+            int w = src.Width, h = src.Height;
+            if (w < 1) w = 1;
+            if (h < 1) h = 1;
+            Bitmap safe = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(safe))
+            {
+                g.Clear(Color.White);
+                g.DrawImage(src, new Rectangle(0, 0, w, h));
+            }
+            src.Dispose();
+            return safe;
         }
 
         static Bitmap LoadImageWic(byte[] data)
@@ -1505,6 +1537,17 @@ class PdfHoverPreview
         // con Windows se hacen por fuera (acceso directo en la carpeta Inicio).
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+
+        // Guardian: una vista previa nunca debe tumbar el programa ni mostrar el
+        // cuadro de "Excepcion no controlada". Tragamos las excepciones sueltas.
+        try
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate(object s, System.Threading.ThreadExceptionEventArgs te) { };
+            AppDomain.CurrentDomain.UnhandledException += delegate(object s, UnhandledExceptionEventArgs ue) { };
+        }
+        catch { }
+
         Application.Run(new TrayContext());
     }
 }
