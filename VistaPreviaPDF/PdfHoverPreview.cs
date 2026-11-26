@@ -241,6 +241,7 @@ class PdfHoverPreview
 
         IntPtr hwnd = GetAncestor(WindowFromPoint(new POINT(pt.X, pt.Y)), GA_ROOT);
         string folder = GetExplorerFolderPath(hwnd);
+        if (folder == null) folder = GetDialogFolderPath(hwnd); // dialogos Abrir/Guardar
         if (folder == null) return null;
 
         string full = Path.Combine(folder, name);
@@ -288,6 +289,45 @@ class PdfHoverPreview
         }
         catch { }
         return null;
+    }
+
+    // Carpeta actual en un dialogo "Abrir/Guardar" (no es una ventana del Explorador).
+    // Se obtiene de la barra de direcciones, cuyo Name es "Direccion: C:\ruta...".
+    // Buscamos el patron de unidad (C:\) para no depender del idioma.
+    static string GetDialogFolderPath(IntPtr hwnd)
+    {
+        try
+        {
+            AutomationElement win = AutomationElement.FromHandle(hwnd);
+            if (win == null) return null;
+            AutomationElementCollection tbs = win.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ToolBar));
+            foreach (AutomationElement tb in tbs)
+            {
+                string nm = null;
+                try { nm = tb.Current.Name; } catch { }
+                if (string.IsNullOrEmpty(nm)) continue;
+                int idx = IndexOfPath(nm);
+                if (idx < 0) continue;
+                string p = nm.Substring(idx).Trim();
+                if (p.Length > 0 && Directory.Exists(p)) return p;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    // Devuelve el indice donde empieza una ruta tipo "C:\" o UNC "\\", o -1.
+    static int IndexOfPath(string s)
+    {
+        for (int i = 0; i + 2 < s.Length; i++)
+        {
+            char c = s[i];
+            if (((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) && s[i + 1] == ':' && s[i + 2] == '\\')
+                return i;
+            if (c == '\\' && s[i + 1] == '\\') return i;
+        }
+        return -1;
     }
 
     // ---------- Ventana de vista previa (sin robar foco, con scroll) ----------

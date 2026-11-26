@@ -26,6 +26,8 @@ y aparece una vista previa flotante — sin abrir el archivo ni cargar programas
 - 📊 **Excel** — .xls, .xlsx
 - 🔍 **Zoom** — Ctrl + rueda, o los botones  −  / ＋
 - 🖱️ **Scroll** — rueda del mouse (Shift + rueda = horizontal)
+- 🗂️ Funciona también en los **cuadros de diálogo "Abrir / Guardar"** de otros
+  programas (útil para ver qué archivo vas a adjuntar antes de elegirlo).
 - 🧰 Vive en la **bandeja del sistema** (ícono de lupa azul) con opciones de
   Pausar, Iniciar con Windows y Salir.
 
