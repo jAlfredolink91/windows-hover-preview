@@ -1,0 +1,13 @@
+# Ejecutables y paquetes (se publican en Releases, no en el repo)
+*.exe
+*.zip
+
+# Archivos especificos de ProMed (internos, no van al repo publico)
+Compartir/ProMed-Certificado.cer
+Compartir/Confiar-certificado (para IT).txt
+
+# Temporales
+*.tmp
+*.log
+Thumbs.db
+desktop.ini

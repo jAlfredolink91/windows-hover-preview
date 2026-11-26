@@ -1,0 +1,61 @@
+VISTA PREVIA (al pasar el cursor)
+==================================
+
+Que hace:
+  Muestra una vista previa del archivo cuando pasas el cursor sobre el
+  en el Explorador de Windows, sin abrirlo. Soporta:
+    - PDF  (todas las paginas, con scroll usando la rueda del mouse)
+    - Imagenes (JPG, PNG, GIF, BMP, TIFF)
+    - Word  (.doc, .docx)
+    - Excel (.xls, .xlsx)
+
+COMO USARLO
+-----------
+  1. Descomprime esta carpeta (clic derecho en el ZIP > Extraer todo).
+
+     IMPORTANTE: si viene en una USB, copia primero la carpeta al disco
+     de la PC (por ejemplo al Escritorio). La red no deja ejecutar
+     programas directamente desde una USB.
+
+  2. Doble clic en  VistaPreviaPDF.exe
+     El programa queda corriendo en la bandeja del sistema (junto al
+     reloj). NO se instala ni modifica nada del sistema: solo corre.
+
+  (Si Windows muestra "Windows protegio tu PC" / SmartScreen:
+   clic en "Mas informacion" > "Ejecutar de todos modos". Es seguro.)
+
+COMO SE USA
+-----------
+  - Pasa el cursor sobre un archivo en el Explorador y espera medio
+    segundo: aparece la vista previa.
+  - Scroll: lleva el cursor sobre la vista previa y usa la RUEDA del mouse.
+  - Zoom: con el cursor sobre la vista previa, manten CTRL y gira la
+    rueda; o usa los botones  -  y  +  de la esquina superior derecha.
+    (Con zoom, SHIFT + rueda desplaza en horizontal.)
+  - El icono en la bandeja es una LUPA AZUL. Clic derecho > "Pausar" o
+    "Salir".
+
+(OPCIONAL) QUE INICIE SOLO CON WINDOWS
+--------------------------------------
+  Clic derecho en el icono de la bandeja (la lupa azul) y activa
+  "Iniciar con Windows".  Veras una palomita cuando este activado.
+  Para desactivarlo, haz clic en esa misma opcion otra vez.
+  (Asi arrancara solo cada vez que enciendas la PC.)
+
+REQUISITOS
+----------
+  Windows 10 u 11. Para Word/Excel, Microsoft Office instalado.
+  (Word y Excel tardan 1-2 segundos la primera vez; luego es instantaneo.)
+
+ANTIVIRUS / SMARTSCREEN  (importante)
+-------------------------------------
+  Es un ejecutable casero sin certificado de una autoridad comercial, asi
+  que Windows (SmartScreen) o algunos antivirus pueden mostrar avisos la
+  primera vez. Es normal: solo lee archivos localmente y no se conecta a
+  internet. Si lo usas en una red de empresa, lo ideal es firmarlo y que
+  el area de IT lo apruebe / agregue una excepcion.
+
+PARA QUITARLO
+-------------
+  Clic derecho en el icono de la bandeja > "Salir", y borra la carpeta
+  donde lo dejaste. Si pusiste el acceso en shell:startup, borralo tambien.
