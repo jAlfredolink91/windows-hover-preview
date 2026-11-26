@@ -10,6 +10,12 @@ $uiaTypes  = (Get-ChildItem "$gac\UIAutomationTypes" -Recurse -Filter UIAutomati
 $winBase   = (Get-ChildItem "$gac\WindowsBase" -Recurse -Filter WindowsBase.dll | Select-Object -First 1).FullName
 $winRt     = (Get-ChildItem "$gac\System.Runtime.WindowsRuntime" -Recurse -Filter System.Runtime.WindowsRuntime.dll | Select-Object -First 1).FullName
 
+# WPF PresentationCore (decodificador WIC para HEIC/WebP) y System.IO.Compression (ZIP)
+$presCore = (Get-ChildItem "$gac\PresentationCore" -Recurse -Filter PresentationCore.dll -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+if (-not $presCore) { $presCore = "$fw\WPF\PresentationCore.dll" }
+$zipDll = "$fw\System.IO.Compression.dll"
+if (-not (Test-Path $zipDll)) { $zipDll = (Get-ChildItem "$gac\System.IO.Compression" -Recurse -Filter System.IO.Compression.dll -ErrorAction SilentlyContinue | Select-Object -First 1).FullName }
+
 & $csc /nologo /target:winexe /out:"$dir\VistaPreviaPDF.exe" /win32icon:"$dir\app.ico" `
   /reference:"$fw\System.dll" `
   /reference:"$fw\System.Core.dll" `
@@ -21,6 +27,9 @@ $winRt     = (Get-ChildItem "$gac\System.Runtime.WindowsRuntime" -Recurse -Filte
   /reference:"$winBase" `
   /reference:"$fw\System.Runtime.dll" `
   /reference:"$winRt" `
+  /reference:"$presCore" `
+  /reference:"$fw\System.Xaml.dll" `
+  /reference:"$zipDll" `
   /reference:"$wm\Windows.Foundation.winmd" `
   /reference:"$wm\Windows.Storage.winmd" `
   /reference:"$wm\Windows.Data.winmd" `

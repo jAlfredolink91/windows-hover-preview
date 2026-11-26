@@ -5,7 +5,7 @@
 # Vista Previa (hover) para el Explorador de Windows
 
 **Muestra una vista previa del archivo con solo pasar el cursor por encima, sin abrirlo.**
-PDF · Imágenes · Word · Excel — con scroll y zoom.
+PDF · Imágenes · Word · Excel · PowerPoint · Texto · ZIP · Correos — con scroll y zoom.
 
 *Hover preview for Windows Explorer: preview PDF, images, Word and Excel files just by hovering — no need to open them.*
 
@@ -21,15 +21,23 @@ Pasas el cursor sobre un archivo en el Explorador de Windows, esperas medio segu
 y aparece una vista previa flotante — sin abrir el archivo ni cargar programas pesados.
 
 - 📄 **PDF** — todas las páginas, con scroll
-- 🖼️ **Imágenes** — JPG, PNG, GIF, BMP, TIFF
-- 📝 **Word** — .doc, .docx
+- 🖼️ **Imágenes** — JPG, PNG, GIF, BMP, TIFF, ICO y **HEIC/WebP** (fotos de celular)
+- 📝 **Word** — .doc, .docx, .rtf
 - 📊 **Excel** — .xls, .xlsx
-- 🔍 **Zoom** — Ctrl + rueda, o los botones  −  / ＋
+- 📽️ **PowerPoint** — .ppt, .pptx
+- 📃 **Texto y código** — .txt, .csv, .log, .xml, .json, .md, .cs, .js, .html, etc.
+- 🗜️ **ZIP** — lista el contenido sin descomprimir
+- 📧 **Correos** — .eml (y .msg si tienes Outlook)
+- 🔍 **Zoom** — Ctrl + rueda, o los botones  −  / ＋  (recuerda el nivel que elijas)
 - 🖱️ **Scroll** — rueda del mouse (Shift + rueda = horizontal)
+- 🔘 **Botón "Abrir"** — abre el archivo con un clic si es el que buscabas
+- 📌 **Fijar** — deja la vista previa abierta para leerla con calma (y puedes moverla)
+- 🌙 **Tema claro/oscuro** — sigue automáticamente al de Windows
+- ⏱️ **Tiempo de aparición** ajustable desde el menú de la bandeja
 - 🗂️ Funciona también en los **cuadros de diálogo "Abrir / Guardar"** de otros
   programas (útil para ver qué archivo vas a adjuntar antes de elegirlo).
 - 🧰 Vive en la **bandeja del sistema** (ícono de lupa azul) con opciones de
-  Pausar, Iniciar con Windows y Salir.
+  Pausar, Iniciar con Windows, Tiempo de aparición y Salir.
 
 ## 💡 Por qué
 
